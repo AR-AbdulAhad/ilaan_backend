@@ -1,0 +1,104 @@
+datasource db {
+  provider = "mysql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Product {
+  id                     Int      @id @default(autoincrement())
+  slug                   String   @unique
+  dateAdded              String?  @map("date_added")
+  productFamily          String?  @map("product_family")
+  use                    String?
+  model                  String?
+  productName            String?  @map("product_name")
+  skuNumber              String?  @map("sku_number")
+  size                   String?
+  picture                Json?    // Stores array of image filenames/URLs, e.g., ["/uploads/img1.png"]
+  productSummary         String?  @db.Text @map("product_summary")
+  longDescription        String?  @db.Text @map("long_description")
+  supplierUrl            String?  @db.Text @map("supplier_url")
+  pixelPitch             String?  @map("pixel_pitch")
+  screenType             String?  @map("screen_type")
+  supplier               String?
+  ocBrand                String?  @map("oc_brand")
+  mount                  String?
+  sides                  String?
+  indoorOutdoor          String?  @map("indoor_outdoor")
+  outdoorRating          String?  @map("outdoor_rating")
+  operatingSystem        String?  @map("operating_system")
+  processor              String?
+  ram                    String?
+  rom                    String?
+  brightness             String?
+  cabinetSize            String?  @map("cabinet_size")
+  cabinetQty             String?  @map("cabinet_qty")
+  cabinetWeight          String?  @map("cabinet_weight")
+  screenDimension        String?  @map("screen_dimension")
+  outerSize              String?  @map("outer_size")
+  leadTime               String?  @map("lead_time")
+  warranty               String?
+  moqs                   String?
+  touch                  String?
+  camera                 String?
+  priceUsd               String?  @map("price_usd")
+  amountEwx              String?  @map("amount_ewx")
+  shipping               String?
+  landedCostUsd          String?  @map("landed_cost_usd")
+  landedCostGbp          String?  @map("landed_cost_gbp")
+  quotes                 Json?    // Array of margin/quote objects: [{"margin": "50.00%", "quote": "£544"}, ...]
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  categoryId             Int?         @map("category_id")
+  category               Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  subcategoryId          Int?         @map("subcategory_id")
+  subcategory            Subcategory? @relation(fields: [subcategoryId], references: [id], onDelete: SetNull)
+  screenTypeId           Int?         @map("screen_type_id")
+  screenTypeRelation     ScreenType?  @relation(fields: [screenTypeId], references: [id], onDelete: SetNull)
+
+  @@map("products")
+}
+
+model Category {
+  id            Int           @id @default(autoincrement())
+  name          String        @unique
+  description   String?       @db.Text
+  status        String        @default("Active")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+  subcategories Subcategory[]
+  products      Product[]
+
+  @@map("categories")
+}
+
+model Subcategory {
+  id          Int       @id @default(autoincrement())
+  name        String
+  categoryId  Int       @map("category_id")
+  category    Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  description String?   @db.Text
+  status      String    @default("Active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  products    Product[]
+
+  @@unique([name, categoryId])
+  @@map("subcategories")
+}
+
+model ScreenType {
+  id          Int       @id @default(autoincrement())
+  name        String    @unique
+  description String?   @db.Text
+  status      String    @default("Active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  products    Product[]
+
+  @@map("screen_types")
+}
+
