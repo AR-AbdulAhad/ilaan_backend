@@ -9,6 +9,7 @@ import {
   bulkImport,
   bulkExport,
   getMetadata,
+  getFilters,
   getCategories,
   createCategory,
   updateCategory,
@@ -29,6 +30,9 @@ const router = Router();
 // Products search, lisgetProductst, create
 router.get('/', getProducts);
 router.post('/', createProduct);
+
+// Dynamic filters
+router.get('/filters', getFilters);
 
 // Dynamic categories & subcategories metadata
 router.get('/metadata', getMetadata);

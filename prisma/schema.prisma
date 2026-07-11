@@ -49,6 +49,9 @@ model Product {
   landedCostUsd          String?  @map("landed_cost_usd")
   landedCostGbp          String?  @map("landed_cost_gbp")
   quotes                 Json?    // Array of margin/quote objects: [{"margin": "50.00%", "quote": "£544"}, ...]
+  purchaseType           String   @default("quote_only") @map("purchase_type")
+  onlinePrice            Float?   @map("online_price")
+  priceGbp               Float?   @map("price_gbp")
   createdAt              DateTime @default(now()) @map("created_at")
   updatedAt              DateTime @updatedAt @map("updated_at")
 
@@ -58,6 +61,7 @@ model Product {
   subcategory            Subcategory? @relation(fields: [subcategoryId], references: [id], onDelete: SetNull)
   screenTypeId           Int?         @map("screen_type_id")
   screenTypeRelation     ScreenType?  @relation(fields: [screenTypeId], references: [id], onDelete: SetNull)
+  cartItems              CartItem[]
 
   @@map("products")
 }
@@ -95,10 +99,46 @@ model ScreenType {
   name        String    @unique
   description String?   @db.Text
   status      String    @default("Active")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
   products    Product[]
 
   @@map("screen_types")
 }
 
+model Cart {
+  id        Int        @id @default(autoincrement())
+  sessionId String     @unique @map("session_id")
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+  items     CartItem[]
+
+  @@map("carts")
+}
+
+model CartItem {
+  id        Int      @id @default(autoincrement())
+  cartId    Int      @map("cart_id")
+  cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  productId Int      @map("product_id")
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([cartId, productId])
+  @@map("cart_items")
+}
+
+model PromoCode {
+  id           Int       @id @default(autoincrement())
+  code         String    @unique
+  discountType String    @map("discount_type") // "percent" | "flat"
+  value        Float
+  expiryDate   DateTime? @map("expiry_date")
+  active       Boolean   @default(true)
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@map("promo_codes")
+}

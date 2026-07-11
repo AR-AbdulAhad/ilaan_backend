@@ -3,6 +3,7 @@ import { generateUniqueSlug } from '../utils/slug.js';
 import xlsx from 'xlsx';
 import fs from 'fs';
 import path from 'path';
+import { filterableFields } from '../config/filtersConfig.js';
 
 /**
  * Helper to clean up files
@@ -75,46 +76,83 @@ export const getProducts = async (req, res, next) => {
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 12;
     const search = req.query.search || '';
-    const productFamily = req.query.productFamily || '';
-    const use = req.query.use || '';
-    const indoorOutdoor = req.query.indoorOutdoor || '';
-    const screenType = req.query.screenType || '';
+    const sort = req.query.sort || 'recommended';
 
     const skip = (page - 1) * limit;
 
     // Define where conditions
     const where = {};
 
-    // Filter by family
-    if (productFamily) {
-      where.productFamily = productFamily;
-    }
+    // Helper to add multi-select "in" condition
+    const addMultiSelectFilter = (queryParam, dbField) => {
+      const val = req.query[queryParam];
+      if (val) {
+        const items = val.split(',').map(v => v.trim()).filter(Boolean);
+        if (items.length > 0) {
+          where[dbField] = { in: items };
+        }
+      }
+    };
 
-    // Filter by use
-    if (use) {
-      where.use = use;
-    }
+    // Add all filters
+    addMultiSelectFilter('category', 'productFamily'); // maps category to productFamily
+    addMultiSelectFilter('productFamily', 'productFamily'); // support direct parameter
+    addMultiSelectFilter('use', 'use');
+    addMultiSelectFilter('screenType', 'screenType');
+    addMultiSelectFilter('size', 'size');
+    addMultiSelectFilter('brightness', 'brightness');
+    addMultiSelectFilter('pixelPitch', 'pixelPitch');
+    addMultiSelectFilter('indoorOutdoor', 'indoorOutdoor');
+    addMultiSelectFilter('mount', 'mount');
+    addMultiSelectFilter('operatingSystem', 'operatingSystem');
 
-    // Filter by indoor/outdoor
-    if (indoorOutdoor) {
-      where.indoorOutdoor = indoorOutdoor;
-    }
+    // Filter by price range (GBP)
+    const minPrice = parseFloat(req.query.minPrice);
+    const maxPrice = parseFloat(req.query.maxPrice);
 
-    // Filter by screen type
-    if (screenType) {
-      where.screenType = screenType;
+    if (!isNaN(minPrice) || !isNaN(maxPrice)) {
+      const priceCond = {};
+      if (!isNaN(minPrice)) priceCond.gte = minPrice;
+      if (!isNaN(maxPrice)) priceCond.lte = maxPrice;
+      
+      where.OR = [
+        { priceGbp: priceCond },
+        { onlinePrice: priceCond }
+      ];
     }
 
     // Search query (matches multiple text fields)
     if (search) {
-      where.OR = [
-        { model: { contains: search } },
-        { productName: { contains: search } },
-        { productFamily: { contains: search } },
-        { use: { contains: search } },
-        { productSummary: { contains: search } },
-        { longDescription: { contains: search } }
+      const searchCond = { contains: search };
+      const searchFields = [
+        { model: searchCond },
+        { productName: searchCond },
+        { productFamily: searchCond },
+        { use: searchCond },
+        { productSummary: searchCond },
+        { longDescription: searchCond }
       ];
+
+      if (where.OR) {
+        // If OR is already used (e.g. for price range), we AND the search condition with it
+        where.AND = [
+          { OR: where.OR },
+          { OR: searchFields }
+        ];
+        delete where.OR;
+      } else {
+        where.OR = searchFields;
+      }
+    }
+
+    // Apply sorting
+    let orderBy = { createdAt: 'desc' };
+    if (sort === 'price-low') {
+      orderBy = { priceGbp: 'asc' };
+    } else if (sort === 'price-high') {
+      orderBy = { priceGbp: 'desc' };
+    } else if (sort === 'name-asc') {
+      orderBy = { productName: 'asc' };
     }
 
     const [products, total] = await Promise.all([
@@ -122,7 +160,7 @@ export const getProducts = async (req, res, next) => {
         where,
         skip,
         take: limit,
-        orderBy: { createdAt: 'desc' }
+        orderBy,
       }),
       prisma.product.count({ where })
     ]);
@@ -141,6 +179,85 @@ export const getProducts = async (req, res, next) => {
     next(error);
   }
 };
+
+/**
+ * Get distinct filterable values for properties
+ * Also returns meta.categorySubcategoryMap for hierarchical filter UX
+ */
+export const getFilters = async (req, res, next) => {
+  try {
+    const filters = {};
+
+    // --- Categories from Category table (with their linked subcategories) ---
+    const categoriesWithSubs = await prisma.category.findMany({
+      where: { status: 'Active' },
+      orderBy: { name: 'asc' },
+      include: {
+        subcategories: {
+          where: { status: 'Active' },
+          select: { name: true },
+          orderBy: { name: 'asc' }
+        }
+      }
+    });
+    filters.productFamily = categoriesWithSubs.map(c => c.name.trim()).filter(Boolean);
+
+    // Build category → subcategory mapping for hierarchical filter UX
+    const categorySubcategoryMap = {};
+    for (const cat of categoriesWithSubs) {
+      categorySubcategoryMap[cat.name.trim()] = cat.subcategories
+        .map(s => s.name.trim())
+        .filter(Boolean);
+    }
+
+    // --- All Subcategories (Use Cases) from Subcategory table ---
+    const subcategories = await prisma.subcategory.findMany({
+      where: { status: 'Active' },
+      select: { name: true },
+      orderBy: { name: 'asc' }
+    });
+    filters.use = [...new Set(subcategories.map(s => s.name.trim()).filter(Boolean))];
+
+    // --- Screen Types from ScreenType table ---
+    const screenTypes = await prisma.screenType.findMany({
+      where: { status: 'Active' },
+      select: { name: true },
+      orderBy: { name: 'asc' }
+    });
+    filters.screenType = screenTypes.map(st => st.name.trim()).filter(Boolean);
+
+    // --- Remaining fields from Product distinct values ---
+    const remainingFields = [
+      { field: 'size' },
+      { field: 'brightness' },
+      { field: 'pixelPitch' },
+      { field: 'indoorOutdoor' },
+      { field: 'mount' },
+      { field: 'operatingSystem' }
+    ];
+
+    for (const item of remainingFields) {
+      const distinctValues = await prisma.product.findMany({
+        select: { [item.field]: true },
+        distinct: [item.field],
+        where: { [item.field]: { not: null } }
+      });
+      const values = distinctValues
+        .map(v => v[item.field]?.trim())
+        .filter(Boolean);
+      filters[item.field] = [...new Set(values)].sort();
+    }
+
+    res.status(200).json({
+      success: true,
+      data: filters,
+      meta: { categorySubcategoryMap }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 
 /**
  * Get single product by ID or Slug
