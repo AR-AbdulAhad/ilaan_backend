@@ -5,7 +5,7 @@ import {
   updateCartItem,
   removeFromCart,
   clearCart
-} from '../../../../ilaan_website_backend/src/controllers/cartController.js';
+} from '../controllers/cartController.js';
 
 const router = Router();
 
